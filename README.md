@@ -1,4 +1,5 @@
-# uuencoding<br>
+# Base64 File Encoder/Decoder<br>
+<br>
 uuencode and uudecode on the web as well as excel macro version<br>
 <br>
 see also<br>
