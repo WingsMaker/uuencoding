@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Base64 File Encoder/Decoder</title>
+<style>
+  :root{
+    --bg:#f3f4f6; --card:#fff; --accent:#1aa3b8; --accent-2:#0d7a8a;
+    --text:#111827; --muted:#6b7280; --danger:#b91c1c;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+  body{ margin:0; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, Noto Sans, "Helvetica Neue", sans-serif; }
+  .wrap{ max-width:880px; margin:32px auto; padding:0 16px; }
+  h1{ font-size:1.35rem; margin:0 0 12px; }
+  .card{ background:var(--card); border:1px solid #e5e7eb; border-radius:10px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .row{ display:flex; gap:16px; flex-wrap:wrap; }
+  .col{ flex:1 1 280px; min-width:280px; }
+  .drop{
+    border:2px dashed #cbd5e1; border-radius:10px; padding:18px; text-align:center; color:var(--muted);
+  }
+  .drop.drag{ background:#f0f9ff; border-color:#7dd3fc; color:#0369a1; }
+  input[type="file"]{ display:block; margin:10px auto 0; }
+  .opts{ display:flex; gap:12px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+  .opts label{ display:flex; align-items:center; gap:6px; }
+  .field{ display:flex; align-items:center; gap:8px; margin-top:10px; }
+  .field input[type="text"]{
+    width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:8px; font-size:.95rem;
+  }
+  .btn{
+    background:var(--accent); color:#fff; border:none; border-radius:8px; padding:10px 14px;
+    cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:8px;
+  }
+  .btn:hover{ background:var(--accent-2); }
+  .btn.secondary{ background:#e5e7eb; color:#111827; }
+  .btn:disabled{ opacity:.6; cursor:not-allowed; }
+  .muted{ color:var(--muted); font-size:.92rem; }
+  .error{ color:var(--danger); font-weight:600; }
+  textarea{
+    width:100%; min-height:180px; resize:vertical; padding:10px; border:1px solid #d1d5db; border-radius:8px;
+    font-family: var(--mono); font-size:.9rem; background:#0b0f14; color:#dce3ea;
+  }
+  .preview-header{ display:flex; justify-content:space-between; align-items:center; margin:6px 0 6px; }
+  .tag{ background:#eef2ff; color:#3730a3; padding:2px 8px; border-radius:999px; font-size:.78rem; }
+  .footer{ margin-top:14px; color:var(--muted); font-size:.85rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Base64 File Encoder/Decoder</h1>
+  <div class="card">
+    <div class="row">
+      <!-- Left: Inputs -->
+      <div class="col">
+        <div id="drop" class="drop">
+          <div><strong>Drop a file here</strong> or choose one below</div>
+          <input id="fileInput" type="file" />
+          <div id="fileMeta" class="muted" style="margin-top:8px;">No file selected</div>
+        </div>
+
+        <div class="opts">
+          <label><input type="radio" name="mode" value="encode" checked /> Encode file → Base64</label>
+          <label><input type="radio" name="mode" value="decode" /> Decode Base64 file → binary</label>
+        </div>
+
+        <div class="field">
+          <label for="outName" class="muted" style="min-width:120px;">Output file name:</label>
+          <input id="outName" type="text" placeholder="auto-filled based on mode & input" />
+        </div>
+
+        <div class="opts">
+          <button id="runBtn" class="btn">Run &amp; Prepare Download</button>
+          <a id="dlBtn" class="btn secondary" style="display:none;" download>Download Result</a>
+          <button id="clearBtn" class="btn secondary">Clear</button>
+        </div>
+
+        <div id="status" class="muted" style="margin-top:10px;"></div>
+        <div id="err" class="error" style="margin-top:6px;"></div>
+      </div>
+
+      <!-- Right: Output Preview -->
+      <div class="col">
+        <div class="preview-header">
+          <div class="muted">Output Preview (first 1000 chars)</div>
+          <span id="outTag" class="tag" style="display:none;"></span>
+        </div>
+        <textarea id="preview" placeholder="Your Base64 output (encode) or a short textual preview (decode if readable) will appear here..." spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <div class="footer">
+      Notes:
+      <ul>
+        <li>Decoder accepts URL-safe Base64 (<code>-</code>, <code>_</code>) and ignores whitespace/newlines; padding is auto-fixed.</li>
+        <li>For encoding, result is saved as a plain text file containing only the Base64 string (no data URL prefix).</li>
+        <li>Very large files will need enough memory to load in the browser; for huge files consider a desktop tool.</li>
+      </ul>
+	  <div class="footer">Powered by Kim Huat</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- Helpers: Base64 <-> bytes ---------- */
+function arrayBufferToBase64(ab){
+  const bytes = new Uint8Array(ab);
+  const chunk = 0x8000; // 32KB chunks to avoid call stack overflow
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += chunk){
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function normalizeBase64(b64){
+  if (typeof b64 !== 'string') b64 = String(b64 ?? '');
+  b64 = b64.replace(/\s+/g, '');     // remove whitespace/newlines
+  b64 = b64.replace(/-/g, '+').replace(/_/g, '/'); // URL-safe to standard
+  const pad = b64.length % 4;
+  if (pad === 2) b64 += '==';
+  else if (pad === 3) b64 += '=';
+  else if (pad !== 0) throw new Error('Invalid Base64 length');
+  return b64;
+}
+
+function base64ToUint8Array(b64){
+  const clean = normalizeBase64(b64);
+  const binary = atob(clean);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++){
+    out[i] = binary.charCodeAt(i) & 0xff;
+  }
+  return out;
+}
+
+/* ---------- Helpers: File IO ---------- */
+function readFileAsArrayBuffer(file){
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(fr.error);
+    fr.readAsArrayBuffer(file);
+  });
+}
+
+function readFileAsText(file){
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(fr.error);
+    fr.readAsText(file);
+  });
+}
+
+function suggestOutputName(inputName, mode){
+  if (!inputName) return '';
+  if (mode === 'encode'){
+    // Add .b64 if not already
+    return /\.(b64|base64|txt)$/i.test(inputName) ? inputName : inputName + '.b64';
+  } else {
+    // Remove .b64/.base64 if present, else add .bin
+    const stripped = inputName.replace(/\.(b64|base64|txt)$/i, '');
+    return stripped === inputName ? (inputName + '.bin') : stripped;
+  }
+}
+
+function makeDownload(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.getElementById('dlBtn');
+  a.href = url;
+  a.download = filename || 'output';
+  a.style.display = 'inline-flex';
+  // Revoke old object URLs on next click
+  a.onclick = () => setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* ---------- UI wiring ---------- */
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const fileMeta = document.getElementById('fileMeta');
+const outName = document.getElementById('outName');
+const runBtn = document.getElementById('runBtn');
+const dlBtn = document.getElementById('dlBtn');
+const clearBtn = document.getElementById('clearBtn');
+const preview = document.getElementById('preview');
+const status = document.getElementById('status');
+const err = document.getElementById('err');
+const outTag = document.getElementById('outTag');
+
+function getMode(){
+  const el = document.querySelector('input[name="mode"]:checked');
+  return el ? el.value : 'encode';
+}
+
+function setFileMeta(file){
+  if (!file){
+    fileMeta.textContent = 'No file selected';
+    return;
+  }
+  fileMeta.textContent = `${file.name} • ${(file.size/1024).toFixed(1)} KB`;
+  outName.value = suggestOutputName(file.name, getMode());
+}
+
+function setStatus(msg){ status.textContent = msg || ''; }
+function setError(msg){ err.textContent = msg || ''; }
+function setTag(text){ if(text){ outTag.textContent = text; outTag.style.display='inline-block'; } else { outTag.style.display='none'; } }
+
+fileInput.addEventListener('change', () => setFileMeta(fileInput.files[0]));
+document.querySelectorAll('input[name="mode"]').forEach(r => {
+  r.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (f) outName.value = suggestOutputName(f.name, getMode());
+    setTag('');
+    preview.value = '';
+    dlBtn.style.display = 'none';
+  });
+});
+
+/* Drag & drop */
+['dragenter','dragover'].forEach(evt =>
+  drop.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); drop.classList.add('drag'); })
+);
+['dragleave','drop'].forEach(evt =>
+  drop.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); drop.classList.remove('drag'); })
+);
+drop.addEventListener('drop', e => {
+  const file = e.dataTransfer.files?.[0];
+  if (file) {
+    fileInput.files = e.dataTransfer.files; // assign to input for consistency
+    setFileMeta(file);
+  }
+});
+
+/* Clear */
+clearBtn.addEventListener('click', () => {
+  fileInput.value = '';
+  setFileMeta(null);
+  outName.value = '';
+  preview.value = '';
+  dlBtn.style.display = 'none';
+  setStatus('');
+  setError('');
+  setTag('');
+});
+
+/* Run */
+runBtn.addEventListener('click', async () => {
+  setStatus(''); setError(''); setTag('');
+  dlBtn.style.display = 'none';
+  const file = fileInput.files[0];
+  if (!file){ setError('Please select a file first.'); return; }
+
+  const mode = getMode();
+  const outFileName = outName.value.trim() || suggestOutputName(file.name, mode);
+
+  runBtn.disabled = true; runBtn.textContent = 'Processing...';
+
+  try{
+    if (mode === 'encode'){
+      // Read binary and encode to Base64
+      setStatus('Reading file as binary…');
+      const buf = await readFileAsArrayBuffer(file);
+
+      setStatus('Encoding to Base64…');
+      const b64 = arrayBufferToBase64(buf);
+
+      // Preview (first 1000 chars)
+      preview.value = b64.slice(0, 1000) + (b64.length > 1000 ? '\n…(truncated)…' : '');
+      setTag('Base64');
+
+      // Prepare download as text/plain
+      const blob = new Blob([b64], { type: 'text/plain;charset=utf-8' });
+      makeDownload(blob, outFileName);
+
+      setStatus(`Done. Base64 length: ${b64.length.toLocaleString()} chars. Ready to download.`);
+    } else {
+      // Decode Base64 text into binary
+      setStatus('Reading file as text (Base64)…');
+      const text = await readFileAsText(file);
+
+      setStatus('Decoding Base64 → bytes…');
+      const bytes = base64ToUint8Array(text);
+
+      // Attempt preview as UTF‑8 (if it's printable)
+      try {
+        const snippet = new TextDecoder().decode(bytes.slice(0, Math.min(bytes.length, 2000)));
+        const printable = /[\x00-\x08\x0E-\x1F]/.test(snippet) ? null : snippet;
+        preview.value = printable
+          ? (snippet.length > 1000 ? snippet.slice(0, 1000) + '\n…(truncated)…' : snippet)
+          : '(Binary data preview suppressed)';
+      } catch {
+        preview.value = '(Binary data preview suppressed)';
+      }
+      setTag('Binary');
+
+      const blob = new Blob([bytes], { type: 'application/octet-stream' });
+      makeDownload(blob, outFileName);
+
+      setStatus(`Done. Output size: ${bytes.length.toLocaleString()} bytes. Ready to download.`);
+    }
+  } catch(ex){
+    console.error(ex);
+    setError('Error: ' + (ex?.message || ex));
+    setStatus('');
+  } finally{
+    runBtn.disabled = false; runBtn.textContent = 'Run & Prepare Download';
+  }
+});
+</script>
+</body>
+</html>
