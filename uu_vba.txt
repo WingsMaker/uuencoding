@@ -1,0 +1,95 @@
+Option Explicit
+
+Sub UUEncode(inputFile As String, outputFile As String)
+    Dim inputBytes() As Byte
+    Dim base64Encoded As String
+    Dim i As Long
+    Dim line As String, txt As String
+    Dim fileNum As Integer
+
+    ' Read binary file
+    Open inputFile For Binary As #1
+    ReDim inputBytes(LOF(1) - 1)
+    Get #1, , inputBytes
+    Close #1
+
+    ' Encode to Base64
+    base64Encoded = EncodeBase64(inputBytes)
+
+    ' Write to output file with 80-character lines
+    fileNum = FreeFile
+    Open outputFile For Output As #fileNum
+    For i = 1 To Len(base64Encoded) Step 80
+        line = Mid(base64Encoded, i, 80)
+        txt = Replace(line, Chr(10), "")
+        Print #fileNum, txt
+        DoEvents
+    Next i
+    Close #fileNum
+
+    MsgBox "Base64 encoded data has been written to " & outputFile
+End Sub
+
+
+Sub UUDecode(inputFile As String, outputFile As String)
+    Dim textLine As String
+    Dim base64Text As String
+    Dim decodedBytes() As Byte
+    Dim fileNum As Integer
+
+    ' Read Base64 text file
+    fileNum = FreeFile
+    Open inputFile For Input As #fileNum
+    Do Until EOF(fileNum)
+        Line Input #fileNum, textLine
+        base64Text = base64Text & textLine
+        DoEvents
+    Loop
+    Close #fileNum
+
+    ' Decode from Base64
+    decodedBytes = DecodeBase64(base64Text)
+
+    ' Write binary output
+    Open outputFile For Binary As #1
+    Put #1, , decodedBytes
+    Close #1
+
+    MsgBox "Decoded binary data has been written to " & outputFile
+End Sub
+
+Function EncodeBase64(inputBytes() As Byte) As String
+    Dim objXML As Object
+    Dim objNode As Object
+
+    Set objXML = CreateObject("MSXML2.DOMDocument")
+    Set objNode = objXML.createElement("b64")
+
+    objNode.DataType = "bin.base64"
+    objNode.nodeTypedValue = inputBytes
+    EncodeBase64 = objNode.Text
+
+    Set objNode = Nothing
+    Set objXML = Nothing
+End Function
+
+Function DecodeBase64(base64Text As String) As Byte()
+    Dim objXML As Object
+    Dim objNode As Object
+
+    Set objXML = CreateObject("MSXML2.DOMDocument")
+    Set objNode = objXML.createElement("b64")
+
+    objNode.DataType = "bin.base64"
+    objNode.Text = base64Text
+    DecodeBase64 = objNode.nodeTypedValue
+
+    Set objNode = Nothing
+    Set objXML = Nothing
+End Function
+
+Sub demo()
+    Call UUEncode("C:\temp\input.bin", "C:\temp\output.txt")
+    rem Call UUDecode("C:\temp\input.txt", "C:\temp\output.bin")
+End Sub
+
