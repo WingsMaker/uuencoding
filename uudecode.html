@@ -262,7 +262,8 @@ runBtn.addEventListener('click', async () => {
       const buf = await readFileAsArrayBuffer(file);
 
       setStatus('Encoding to Base64…');
-      const b64 = arrayBufferToBase64(buf);
+      const b64_raw = arrayBufferToBase64(buf);
+	  var b64 = b64_raw.replace(/(.{1,80})/g, '$1\n').replace(/\n$/, '');
 
       // Preview (first 1000 chars)
       preview.value = b64.slice(0, 1000) + (b64.length > 1000 ? '\n…(truncated)…' : '');
